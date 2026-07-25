@@ -2,6 +2,15 @@
 
 LeadDesk Mini is a small lead-capture product with a public form and a protected admin workspace. It uses React + Vite on the client and Express, MongoDB, Mongoose, bcrypt, and JWT on the server.
 
+## Live deployment
+
+- **Frontend:** https://leaddesk-mini-rose.vercel.app/
+- **Backend API:** https://leaddesk-mini-hsd4.onrender.com/api
+
+**Test credentials for reviewers:** use the admin email/password that were seeded for this deployment (see `ADMIN_EMAIL` / `ADMIN_PASSWORD` provided separately with this submission — not committed to the repo for security). Log in at `/admin/login` on the live frontend URL above.
+
+Note: the backend is on Render's free tier, which sleeps after inactivity — the first request after a period of idle time may take 20-30 seconds to respond while it wakes up.
+
 ## Project structure
 
 ```text
@@ -141,3 +150,18 @@ The API uses the `CLIENT_URL` environment variable as an allow-list. It accepts 
 
 MongoDB Atlas M0, Render free web services, and Vercel’s free tier are sufficient for this task. Render free services may take a short time to wake after inactivity.
 
+## AI usage
+
+I used AI assistance to scaffold the initial project structure, Mongoose models, Express routes, and middleware boilerplate. From there, I reviewed and worked through the implementation myself: verifying the auth flow (JWT issuance, token verification, admin re-lookup on every protected request), the CORS allow-list configuration, adding rate limiting to the login route, and the regex-escaping on the admin search query to prevent regex injection. I also debugged and fixed two real issues that only surfaced during deployment (see below) rather than accepting the first generated version as final.
+
+## Known tradeoffs
+
+- **JWT is stored in `localStorage`** on the client rather than an httpOnly cookie. This is simpler to implement for this scope, but is more exposed to XSS-based token theft than a cookie-based approach would be. For a production deployment handling real client data, I'd move to httpOnly cookies with a CSRF mitigation strategy instead.
+- **MongoDB Atlas Network Access is set to `0.0.0.0/0`** (allow from anywhere) to keep Render connectivity simple within the task's time window. In production this would be scoped to Render's specific outbound IP ranges instead.
+- **No automated tests** were added given the time constraints of this task; validation was done manually across the full flow (form submission, admin login, search, status updates) in both local and deployed environments.
+
+## Bugs fixed during deployment
+
+- **Header-merging bug in the frontend API client:** the shared `request()` helper in `client/src/api/api.js` spread `...options` after the `headers` object, so any call that passed custom headers (like the JWT `Authorization` header) silently overwrote `Content-Type: application/json` entirely. This caused the backend's `express.json()` middleware to never parse the request body, producing a `Cannot destructure property 'status' of req.body` crash on the status-update endpoint. Fixed by extracting `headers` from `options` first and merging it last, so `Content-Type` is never dropped.
+- **404 on direct admin route loads on Vercel:** the app uses client-side routing (`BrowserRouter`), but Vercel has no knowledge of client-side routes and returns a 404 when a route like `/admin/login` is requested directly instead of navigated to from within the app. Fixed by adding a `client/vercel.json` rewrite rule that serves `index.html` for all paths, letting React Router handle routing client-side as intended.
+- **MongoDB SRV DNS resolution failures in local development:** Node's internal DNS resolver failed to resolve the `mongodb+srv://` SRV record on the local dev network even though the OS-level resolver worked fine. Fixed by explicitly setting Node's DNS servers (`dns.setServers(["8.8.8.8", "8.8.4.4"])`) at the top of both `server.js` and `seedAdmin.js`, before any other imports run.
